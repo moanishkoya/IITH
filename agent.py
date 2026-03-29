@@ -11,6 +11,7 @@ from tools import get_weather, search_web, send_email
 from mem0 import AsyncMemoryClient
 from mcp_client import MCPServerSse
 from mcp_client.agent_tools import MCPToolsIntegration
+from drift_detector import detect_drift
 import os
 import json
 import logging
@@ -23,9 +24,8 @@ class Assistant(Agent):
         super().__init__(
             instructions=AGENT_INSTRUCTION,
             llm=google.beta.realtime.RealtimeModel(
-                model="gemini-2.0-flash-exp",
-                voice="Puck",               # Puck, Charon, Kore, Fenrir, Aoede
-                api_key=os.environ.get("GOOGLE_API_KEY"),
+                voice="Aoede",
+                temperature=0.8,
             ),
             tools=[
                 get_weather,
@@ -46,6 +46,9 @@ async def entrypoint(ctx: agents.JobContext):
         logging.info(f"Chat context messages: {chat_ctx.items}")
 
         for item in chat_ctx.items:
+            if not hasattr(item, 'role') or not hasattr(item, 'content'):
+                continue
+
             content_str = ''.join(item.content) if isinstance(item.content, list) else str(item.content)
 
             if memory_str and memory_str in content_str:
@@ -62,28 +65,45 @@ async def entrypoint(ctx: agents.JobContext):
         logging.info("Chat context saved to memory.")
 
 
-    session = AgentSession()    # Gemini Live handles STT/TTS/VAD internally
+    session = AgentSession()
 
     mem0 = AsyncMemoryClient()
     user_name = 'Moanish'
 
-    results = await mem0.get_all(user_id=user_name)
+    response = await mem0.get_all(user_id=user_name, filters={"user_id": user_name})
+    results = response if isinstance(response, list) else response.get("results", [])
+
     initial_ctx = ChatContext()
     memory_str = ''
+    drift_str = ''
 
     if results:
+        # Sort by updated_at so drift detection sees chronological order
+        sorted_results = sorted(results, key=lambda x: x.get("updated_at", ""))
+
         memories = [
             {
                 "memory": result["memory"],
                 "updated_at": result["updated_at"]
             }
-            for result in results
+            for result in sorted_results
         ]
         memory_str = json.dumps(memories)
         logging.info(f"Memories: {memory_str}")
+
+        # Run drift detection
+        drift_insight = await detect_drift(memories)
+        if drift_insight:
+            drift_str = drift_insight
+            logging.info(f"Drift detected: {drift_str}")
+
+        context_message = f"The user's name is {user_name}, and this is relevant context about him: {memory_str}."
+        if drift_str:
+            context_message += f"\n\nDrift insight: {drift_str}"
+
         initial_ctx.add_message(
             role="assistant",
-            content=f"The user's name is {user_name}, and this is relevant context about him: {memory_str}."
+            content=context_message
         )
 
     mcp_server = MCPServerSse(
