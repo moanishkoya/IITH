@@ -6,13 +6,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 client = AsyncOpenAI(
-    api_key=os.environ.get("FEATHERLESS_API_KEY"),
-    base_url="https://api.featherless.ai/v1"
+    api_key=os.environ.get("GROQ_API_KEY"),
+    base_url="https://api.groq.com/openai/v1"
 )
 
 async def detect_drift(memories: list) -> str | None:
     if len(memories) < 2:
-        return None  # Not enough history to detect drift
+        return None
 
     memories_str = json.dumps(memories, indent=2)
 
@@ -24,8 +24,14 @@ Here are the user's memories sorted by date:
 Your job:
 1. Compare older memories vs newer ones.
 2. Detect if the user's preferences, habits, mood, or context have noticeably shifted.
-3. If drift is detected, respond in this exact format:
-   DRIFT_DETECTED: Your preferences have shifted because <reason>. Previously you <old behavior>, but now you seem to <new behavior>. Updated recommendation: <recommendation>.
+3. If drift is detected, respond in EXACTLY this format:
+   DRIFT_DETECTED:
+   Reason: <one sentence explaining why the drift happened>
+   Updated Recommendations:
+   - <recommendation 1>
+   - <recommendation 2>
+   - <recommendation 3>
+
 4. If no significant drift is detected, respond with:
    NO_DRIFT
 
@@ -33,7 +39,7 @@ Only respond with one of the two formats above, nothing else."""
 
     try:
         response = await client.chat.completions.create(
-            model="Qwen/Qwen2.5-72B-Instruct",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=500
         )
