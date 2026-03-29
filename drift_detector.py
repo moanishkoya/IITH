@@ -1,11 +1,14 @@
 import json
 import os
-from google import genai
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
-client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
+client = AsyncOpenAI(
+    api_key=os.environ.get("FEATHERLESS_API_KEY"),
+    base_url="https://api.featherless.ai/v1"
+)
 
 async def detect_drift(memories: list) -> str | None:
     if len(memories) < 2:
@@ -29,18 +32,18 @@ Your job:
 Only respond with one of the two formats above, nothing else."""
 
     try:
-        response = await client.aio.models.generate_content(
-            model="gemini-2.0-flash-lite",
-            contents=prompt
+        response = await client.chat.completions.create(
+            model="Qwen/Qwen2.5-72B-Instruct",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=500
         )
 
-        result = response.text.strip()
+        result = response.choices[0].message.content.strip()
 
         if result.startswith("DRIFT_DETECTED:"):
             return result.replace("DRIFT_DETECTED:", "").strip()
         return None
 
     except Exception as e:
-        # Don't crash the agent if drift detection fails
         print(f"Drift detection skipped: {e}")
         return None
